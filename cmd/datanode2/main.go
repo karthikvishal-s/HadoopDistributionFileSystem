@@ -65,6 +65,7 @@ func (dn *DataNode) sendHeartbeats() {
 		hb := common.HeartbeatMsg{
 			NodeID:     dn.nodeID,
 			Rack:       dn.rack,
+			ListenPort: dn.listenPort,
 			Timestamp:  time.Now(),
 			BlockIDs:   blockIDs,
 			UsedBytes:  usedBytes,

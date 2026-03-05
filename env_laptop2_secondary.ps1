@@ -4,7 +4,7 @@
 $env:NODE_ID = "SecondaryNN"
 $env:MY_RACK = "RackA"
 $env:LISTEN_PORT = "9001"
-$env:NAMENODE_ADDR = "<LAPTOP1_IP>:8000"
+$env:NAMENODE_ADDR = "10.253.4.56:8000"
 
 Write-Host "Environment set for Laptop 2 (Secondary NameNode). Starting..."
 go run ./cmd/secondary/

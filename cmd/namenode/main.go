@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -373,6 +374,9 @@ func (nn *NameNode) handleUpload(conn net.Conn, payload json.RawMessage) {
 		return
 	}
 
+	// Sanitize file name to avoid directory traversal / path issues in block IDs
+	upload.FileName = filepath.Base(upload.FileName)
+
 	nn.mu.RLock()
 	inSafe := nn.safeMode
 	nn.mu.RUnlock()
@@ -500,6 +504,9 @@ func (nn *NameNode) handleRead(conn net.Conn, payload json.RawMessage) {
 		sendResponse(conn, false, "Invalid read payload", nil)
 		return
 	}
+
+	// Sanitize file name
+	readReq.FileName = filepath.Base(readReq.FileName)
 
 	nn.mu.RLock()
 	fileMeta, exists := nn.files[readReq.FileName]
@@ -722,13 +729,16 @@ func (nn *NameNode) handleConnection(conn net.Conn) {
 		// Store the remote address for this datanode
 		remoteAddr := conn.RemoteAddr().String()
 		host, _, _ := net.SplitHostPort(remoteAddr)
-		nn.mu.Lock()
-		// The DataNode listens on its own port, we need to know that port
-		// Convention: DataNodes listen on port 9000 + their index
-		if _, exists := nn.dataNodeAddrs[hb.NodeID]; !exists {
-			// Default: assume DataNode listens on port 9001
-			nn.dataNodeAddrs[hb.NodeID] = host + ":9001"
+
+		port := hb.ListenPort
+		if port == "" {
+			port = "9001" // fallbacks
+		} else if port[0] == ':' {
+			port = port[1:]
 		}
+
+		nn.mu.Lock()
+		nn.dataNodeAddrs[hb.NodeID] = host + ":" + port
 		nn.mu.Unlock()
 		nn.handleHeartbeat(hb)
 

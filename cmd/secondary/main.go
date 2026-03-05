@@ -23,6 +23,7 @@ type SecondaryNode struct {
 	blockDir     string
 	blocks       map[string]*common.Block // blockID -> block
 	isLeader     bool
+	isElecting   bool
 	log          *common.Logger
 }
 
@@ -38,6 +39,7 @@ func NewSecondaryNode(nodeID, rack, nameNodeAddr, listenPort string) *SecondaryN
 		blockDir:     blockDir,
 		blocks:       make(map[string]*common.Block),
 		isLeader:     false,
+		isElecting:   false,
 		log:          common.NewLogger("SecondaryNN", nodeID),
 	}
 }
@@ -50,6 +52,16 @@ func (sn *SecondaryNode) sendHeartbeats() {
 
 	for range ticker.C {
 		sn.mu.RLock()
+		if sn.isLeader {
+			sn.mu.RUnlock()
+			continue // Leaders don't send heartbeats
+		}
+
+		if sn.isElecting {
+			sn.mu.RUnlock()
+			continue // Wait for election to finish before sending more heartbeats
+		}
+
 		blockIDs := make([]string, 0, len(sn.blocks))
 		var usedBytes int64
 		for id, block := range sn.blocks {
@@ -61,6 +73,7 @@ func (sn *SecondaryNode) sendHeartbeats() {
 		hb := common.HeartbeatMsg{
 			NodeID:     sn.nodeID,
 			Rack:       sn.rack,
+			ListenPort: sn.listenPort,
 			Timestamp:  time.Now(),
 			BlockIDs:   blockIDs,
 			UsedBytes:  usedBytes,
@@ -78,7 +91,7 @@ func (sn *SecondaryNode) sendHeartbeats() {
 		if err != nil {
 			sn.log.Warn("💔 Cannot reach NameNode at %s: %v", sn.nameNodeAddr, err)
 			sn.log.Warn("🗳️  NameNode may be down! Considering leader election...")
-			sn.tryLeaderElection()
+			go sn.tryLeaderElection() // Run in goroutine to not block ticker
 			continue
 		}
 
@@ -92,11 +105,18 @@ func (sn *SecondaryNode) sendHeartbeats() {
 
 func (sn *SecondaryNode) tryLeaderElection() {
 	sn.mu.Lock()
-	if sn.isLeader {
+	if sn.isLeader || sn.isElecting {
 		sn.mu.Unlock()
 		return
 	}
+	sn.isElecting = true
 	sn.mu.Unlock()
+
+	defer func() {
+		sn.mu.Lock()
+		sn.isElecting = false
+		sn.mu.Unlock()
+	}()
 
 	sn.log.Event("🗳️  LEADER ELECTION: Attempting to become the new NameNode...")
 
@@ -427,7 +447,7 @@ func main() {
 
 	nameNodeAddr := os.Getenv("NAMENODE_ADDR")
 	if nameNodeAddr == "" {
-		nameNodeAddr = "localhost:8000"
+		nameNodeAddr = "10.253.4.56:8000" // Laptop 1 (NameNode) IP
 	}
 
 	listenPort := os.Getenv("LISTEN_PORT")

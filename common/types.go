@@ -58,6 +58,7 @@ type Block struct {
 type HeartbeatMsg struct {
 	NodeID     string    `json:"node_id"`
 	Rack       string    `json:"rack"`
+	ListenPort string    `json:"listen_port"`
 	Timestamp  time.Time `json:"timestamp"`
 	BlockIDs   []string  `json:"block_ids"` // Block report
 	UsedBytes  int64     `json:"used_bytes"`
