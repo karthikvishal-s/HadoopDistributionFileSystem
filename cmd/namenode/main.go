@@ -403,7 +403,7 @@ func (nn *NameNode) handleUpload(conn net.Conn, payload json.RawMessage) {
 		chunk := data[:chunkSize]
 		data = data[chunkSize:]
 
-		blockID := fmt.Sprintf("%s_block_%d", upload.FileName, blockNum)
+		blockID := fmt.Sprintf("%s_block_%d", filepath.Base(upload.FileName), blockNum)
 		checksum := common.ComputeChecksum(chunk)
 
 		nn.log.Info("  📦 Block %d: ID=%s Size=%d bytes SHA256=%s...", blockNum, blockID, len(chunk), checksum[:16])
