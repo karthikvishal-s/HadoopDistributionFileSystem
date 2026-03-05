@@ -245,8 +245,10 @@ func (sn *SecondaryNode) forwardBlock(addr string, block common.Block, fileName 
 		Payload: payload,
 	}
 
-	data, _ := json.Marshal(msg)
-	conn.Write(data)
+	if err := json.NewEncoder(conn).Encode(msg); err != nil {
+		sn.log.Error("❌ Failed to encode block %s for forwarding: %v", block.BlockID, err)
+		return
+	}
 	sn.log.Success("✅ Block %s forwarded to %s", block.BlockID, addr)
 }
 

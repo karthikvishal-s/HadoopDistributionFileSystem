@@ -3,7 +3,7 @@
 
 $env:NAMENODE_PORT = "8000"
 $env:EXPECTED_DATANODES = "3"
-$env:DATANODE_ADDRS = "SecondaryNN=<LAPTOP2_IP>:9001,DataNode1=<LAPTOP3_IP>:9002,DataNode2=<LAPTOP4_IP>:9003"
+$env:DATANODE_ADDRS = "SecondaryNN=10.253.4.135:9001,DataNode1=10.253.4.238:9002,DataNode2=10.253.4.158:9003"
 
 Write-Host "Environment set for Laptop 1 (NameNode). Starting..."
 go run ./cmd/namenode/

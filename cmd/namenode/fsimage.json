@@ -1,0 +1,54 @@
+{
+  "files": {
+    "/Users/karthikvishal/Desktop/Projects/HDFS/test.txt": {
+      "file_name": "/Users/karthikvishal/Desktop/Projects/HDFS/test.txt",
+      "file_size": 18,
+      "block_ids": [
+        "test.txt_block_0"
+      ],
+      "block_locations": {
+        "test.txt_block_0": [
+          "SecondaryNN",
+          "DataNode1",
+          "DataNode2"
+        ]
+      },
+      "created_at": "2026-03-05T16:02:33.770546+05:30"
+    }
+  },
+  "nodes": {
+    "DataNode1": {
+      "node_id": "DataNode1",
+      "address": "",
+      "rack": "RackB",
+      "alive": true,
+      "last_heartbeat": "2026-03-05T16:02:37.1609086+05:30",
+      "used_bytes": 0,
+      "total_bytes": 10737418240,
+      "blocks": []
+    },
+    "DataNode2": {
+      "node_id": "DataNode2",
+      "address": "",
+      "rack": "RackB",
+      "alive": true,
+      "last_heartbeat": "2026-03-05T16:02:32.4251959+05:30",
+      "used_bytes": 0,
+      "total_bytes": 10737418240,
+      "blocks": []
+    },
+    "SecondaryNN": {
+      "node_id": "SecondaryNN",
+      "address": "",
+      "rack": "RackA",
+      "alive": true,
+      "last_heartbeat": "2026-03-05T16:02:34.7089542+05:30",
+      "used_bytes": 18,
+      "total_bytes": 10737418240,
+      "blocks": [
+        "test.txt_block_0"
+      ]
+    }
+  },
+  "timestamp": "2026-03-05T16:02:33.770584+05:30"
+}
