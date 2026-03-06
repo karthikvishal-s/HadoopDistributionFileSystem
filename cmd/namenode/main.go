@@ -47,8 +47,8 @@ func NewNameNode(port string, expectedNodes int) *NameNode {
 // ==================== SAFE MODE ====================
 
 func (nn *NameNode) checkSafeMode() {
-	nn.mu.RLock()
-	defer nn.mu.RUnlock()
+	nn.mu.Lock()
+	defer nn.mu.Unlock()
 
 	if !nn.safeMode {
 		return
@@ -62,11 +62,7 @@ func (nn *NameNode) checkSafeMode() {
 	}
 
 	if aliveCount >= nn.expectedNodes {
-		nn.mu.RUnlock()
-		nn.mu.Lock()
 		nn.safeMode = false
-		nn.mu.Unlock()
-		nn.mu.RLock()
 		nn.log.Event("🟢 SAFE MODE EXITED — All %d/%d DataNodes are online! Cluster is READY for read/write operations.", aliveCount, nn.expectedNodes)
 	} else {
 		nn.log.Info("⏳ Safe Mode: %d/%d DataNodes online. Waiting for all nodes...", aliveCount, nn.expectedNodes)
@@ -133,6 +129,13 @@ func (nn *NameNode) monitorHeartbeats() {
 	defer ticker.Stop()
 
 	for range ticker.C {
+		// Collect dead nodes under lock (safe — no unlock mid-iteration)
+		type deadNodeInfo struct {
+			nodeID string
+			blocks []string
+		}
+		var deadNodes []deadNodeInfo
+
 		nn.mu.Lock()
 		now := time.Now()
 		for nodeID, node := range nn.nodes {
@@ -140,30 +143,32 @@ func (nn *NameNode) monitorHeartbeats() {
 				node.Alive = false
 				nn.log.Event("💀 DataNode %s DECLARED DEAD — No heartbeat for %v (Rack: %s)",
 					nodeID, common.DeadNodeTimeout, node.Rack)
-				nn.log.Warn("🔄 Triggering re-replication for blocks on dead node %s...", nodeID)
 
-				// Find blocks that need re-replication
-				deadBlocks := make([]string, len(node.Blocks))
-				copy(deadBlocks, node.Blocks)
+				blocksCopy := make([]string, len(node.Blocks))
+				copy(blocksCopy, node.Blocks)
+				deadNodes = append(deadNodes, deadNodeInfo{nodeID: nodeID, blocks: blocksCopy})
+			}
+		}
 
-				// Remove dead node from block locations
-				for _, blockID := range deadBlocks {
-					newNodes := []string{}
-					for _, nid := range nn.blockToNodes[blockID] {
-						if nid != nodeID {
-							newNodes = append(newNodes, nid)
-						}
+		// Remove dead nodes from block locations (still under lock, but iteration is done)
+		for _, dn := range deadNodes {
+			for _, blockID := range dn.blocks {
+				newNodes := []string{}
+				for _, nid := range nn.blockToNodes[blockID] {
+					if nid != dn.nodeID {
+						newNodes = append(newNodes, nid)
 					}
-					nn.blockToNodes[blockID] = newNodes
 				}
-
-				nn.mu.Unlock()
-				// Trigger re-replication
-				nn.reReplicateBlocks(deadBlocks)
-				nn.mu.Lock()
+				nn.blockToNodes[blockID] = newNodes
 			}
 		}
 		nn.mu.Unlock()
+
+		// Trigger re-replication outside the lock
+		for _, dn := range deadNodes {
+			nn.log.Warn("🔄 Triggering re-replication for %d blocks on dead node %s...", len(dn.blocks), dn.nodeID)
+			nn.reReplicateBlocks(dn.blocks)
+		}
 
 		// Check safe mode after heartbeat scan
 		nn.checkSafeMode()
@@ -173,8 +178,8 @@ func (nn *NameNode) monitorHeartbeats() {
 // ==================== RE-REPLICATION ====================
 
 func (nn *NameNode) reReplicateBlocks(blockIDs []string) {
-	nn.mu.RLock()
-	defer nn.mu.RUnlock()
+	nn.mu.Lock()
+	defer nn.mu.Unlock()
 
 	for _, blockID := range blockIDs {
 		currentNodes := nn.blockToNodes[blockID]
@@ -206,6 +211,16 @@ func (nn *NameNode) reReplicateBlocks(blockIDs []string) {
 			}
 
 			nn.log.Info("  📦 Re-replicate block %s: %s → %v", blockID, sourceNode, targets)
+
+			// Update metadata immediately so we track the new replicas
+			nn.blockToNodes[blockID] = append(nn.blockToNodes[blockID], targets...)
+
+			// Also update file metadata block locations
+			for _, file := range nn.files {
+				if locs, ok := file.BlockLocations[blockID]; ok {
+					file.BlockLocations[blockID] = append(locs, targets...)
+				}
+			}
 
 			// Send replicate command to source node
 			go nn.sendReplicateCommand(sourceAddr, blockID, targets, targetAddrs)
@@ -409,7 +424,9 @@ func (nn *NameNode) handleUpload(conn net.Conn, payload json.RawMessage) {
 		nn.log.Info("  📦 Block %d: ID=%s Size=%d bytes SHA256=%s...", blockNum, blockID, len(chunk), checksum[:16])
 
 		// Pick placement using rack-aware algorithm
-		targets := nn.pickBlockPlacement(common.RackA) // client is on rack A (NameNode's rack)
+		// Determine client rack from the connection's remote address
+		clientRack := nn.getRackForAddr(conn.RemoteAddr().String())
+		targets := nn.pickBlockPlacement(clientRack)
 
 		if len(targets) == 0 {
 			nn.log.Error("  ❌ No available DataNodes for block %s", blockID)
@@ -634,13 +651,46 @@ func (nn *NameNode) runBalancer() {
 			overNode := nn.nodes[maxUtil.nodeID]
 			if overNode != nil && len(overNode.Blocks) > 0 {
 				blockToMove := overNode.Blocks[0]
+				sourceAddr := nn.dataNodeAddrs[maxUtil.nodeID]
+				targetAddr := nn.dataNodeAddrs[minUtil.nodeID]
+				nn.mu.RUnlock()
+
 				nn.log.Info("  ⚖️  Moving block %s from %s → %s", blockToMove, maxUtil.nodeID, minUtil.nodeID)
+
+				// Actually send replicate command to move the block
+				if sourceAddr != "" && targetAddr != "" {
+					go nn.sendReplicateCommand(sourceAddr, blockToMove, []string{minUtil.nodeID}, []string{targetAddr})
+
+					// Update metadata
+					nn.mu.Lock()
+					nn.blockToNodes[blockToMove] = append(nn.blockToNodes[blockToMove], minUtil.nodeID)
+					nn.mu.Unlock()
+
+					nn.log.Success("  ⚖️  Balance move initiated: block %s → %s", blockToMove, minUtil.nodeID)
+				}
+			} else {
+				nn.mu.RUnlock()
 			}
-			nn.mu.RUnlock()
 		} else {
 			nn.log.Info("⚖️  Balancer: Cluster is balanced (spread: %.1f%%)", (maxUtil.ratio-minUtil.ratio)*100)
 		}
 	}
+}
+
+// getRackForAddr determines the rack for a given network address by looking up known DataNode addresses
+func (nn *NameNode) getRackForAddr(remoteAddr string) string {
+	host, _, _ := net.SplitHostPort(remoteAddr)
+	nn.mu.RLock()
+	defer nn.mu.RUnlock()
+	for _, node := range nn.nodes {
+		addr := nn.dataNodeAddrs[node.NodeID]
+		nodeHost, _, _ := net.SplitHostPort(addr)
+		if nodeHost == host {
+			return node.Rack
+		}
+	}
+	// Default: NameNode is on RackA, and CLI uploads are local
+	return common.RackA
 }
 
 // ==================== METADATA PERSISTENCE ====================

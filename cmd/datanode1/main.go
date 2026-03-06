@@ -332,6 +332,24 @@ func (dn *DataNode) handleConnection(conn net.Conn) {
 		}
 		go dn.handleReplicateCmd(cmd)
 
+	case common.MsgNewLeader:
+		var election common.ElectionPayload
+		if err := json.Unmarshal(envelope.Payload, &election); err != nil {
+			dn.log.Error("Failed to parse NewLeader payload: %v", err)
+			return
+		}
+		// Redirect heartbeats to the new leader
+		host, _, _ := net.SplitHostPort(remoteAddr)
+		port := election.Address
+		if port != "" && port[0] == ':' {
+			port = port[1:]
+		}
+		newAddr := host + ":" + port
+		dn.mu.Lock()
+		dn.nameNodeAddr = newAddr
+		dn.mu.Unlock()
+		dn.log.Event("👑 NEW LEADER: %s at %s — Redirecting heartbeats to new NameNode", election.CandidateID, newAddr)
+
 	default:
 		dn.log.Warn("Unknown message type: %s", envelope.Type)
 	}
