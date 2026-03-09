@@ -149,7 +149,12 @@ func (n *Node) processUploadRequest(req UploadRequest) error {
 			if dn == n.ID {
 				n.storeChunkLocally(msg)
 			} else {
-				go n.sendRPC(dn, "/receive_chunk", msg)
+				go func(targetDN int, targetMsg ChunkDataMsg) {
+					_, err := n.sendRPC(targetDN, "/receive_chunk", targetMsg)
+					if err != nil {
+						log.Printf("[Leader] Failed to send chunk %s to DataNode %d: %v", targetMsg.ChunkID, targetDN, err)
+					}
+				}(dn, msg)
 			}
 		}
 	}

@@ -75,7 +75,13 @@ func NewNode(id int, peerList []Peer) *Node {
 		Address:      myAddress,
 		Peers:        peers,
 		LeaderID:     -1, // -1 means unknown
-		client:       &http.Client{Timeout: 2 * time.Second},
+		client:       &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 100,
+			},
+		},
 		serverMux:    http.NewServeMux(),
 		StorageDir:   storageDir,
 		FileMetadata: make(map[string]FileRecord),
