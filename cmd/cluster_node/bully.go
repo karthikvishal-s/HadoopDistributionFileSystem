@@ -120,6 +120,7 @@ func (n *Node) monitorLeader() {
 			continue // I am leader or election in progress
 		}
 
+		log.Printf("Sending 3-second heartbeat ping to Leader %d...", leader)
 		_, err := n.sendRPC(leader, "/ping", nil)
 		if err != nil {
 			log.Printf("Leader %d unresponsive! Triggering election...", leader)

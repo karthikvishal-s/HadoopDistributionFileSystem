@@ -44,6 +44,9 @@ func main() {
 	time.Sleep(2 * time.Second)
 	go node.StartElection()
 
+	// Start monitoring the leader
+	go node.monitorLeader()
+
 	// Start interactive CLI blocking the main thread
 	node.StartCLI()
 }
