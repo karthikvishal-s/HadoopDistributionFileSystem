@@ -154,13 +154,57 @@ func (n *Node) processUploadRequest(req UploadRequest) error {
 		}
 	}
 
+
 	n.mu.Lock()
 	n.FileMetadata[req.FileName] = record
 	n.mu.Unlock()
 
+	n.saveFSImage()
+
 	log.Printf("[Leader] File %s successfully chunked and distributed.", req.FileName)
 	return nil
 }
+
+func (n *Node) saveFSImage() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	// Save NameNode metadata to a shared cluster fsimage file
+	data, err := json.MarshalIndent(n.FileMetadata, "", "  ")
+	if err != nil {
+		log.Printf("[Leader] Failed to marshal fsimage: %v", err)
+		return
+	}
+
+	err = os.WriteFile("fsimage.json", data, 0644)
+	if err != nil {
+		log.Printf("[Leader] Failed to save fsimage.json: %v", err)
+		return
+	}
+	log.Printf("[Leader] fsimage.json updated.")
+}
+
+func (n *Node) loadFSImage() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	data, err := os.ReadFile("fsimage.json")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("[Leader] Failed to read existing fsimage.json: %v", err)
+		}
+		return
+	}
+
+	err = json.Unmarshal(data, &n.FileMetadata)
+	if err != nil {
+		log.Printf("[Leader] Failed to parse fsimage.json: %v", err)
+		return
+	}
+	
+	log.Printf("[Leader] Successfully loaded %d records from fsimage.json.", len(n.FileMetadata))
+}
+
 
 // DataNode HTTP handler for receiving a chunk
 func (n *Node) handleReceiveChunk(w http.ResponseWriter, r *http.Request) {

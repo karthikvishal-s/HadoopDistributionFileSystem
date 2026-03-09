@@ -66,6 +66,9 @@ func (n *Node) becomeLeader() {
 	log.Printf("I am the new Leader (NameNode)")
 	n.mu.Unlock()
 
+	// Load existing fsimage if it exists
+	n.loadFSImage()
+
 	msg := ElectionMsg{SenderID: n.ID}
 	for id := range n.Peers {
 		if id < n.ID {
