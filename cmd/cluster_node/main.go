@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"time"
 )
@@ -13,6 +14,8 @@ func main() {
 	id := flag.Int("id", 1, "Node ID (1-4)")
 	configFile := flag.String("config", "config.json", "Path to config file")
 	flag.Parse()
+
+	rand.Seed(time.Now().UnixNano())
 
 	// Setup logging prefixed by Node ID
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
