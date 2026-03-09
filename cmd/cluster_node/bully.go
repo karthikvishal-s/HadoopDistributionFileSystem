@@ -107,14 +107,14 @@ func (n *Node) handleCoordinator(w http.ResponseWriter, r *http.Request) {
 func (n *Node) handlePing(w http.ResponseWriter, r *http.Request) {
 	var msg ElectionMsg
 	if err := json.NewDecoder(r.Body).Decode(&msg); err == nil {
-		log.Printf("Received 3-second heartbeat ping from Node %d", msg.SenderID)
+		log.Printf("Received 12-second heartbeat ping from Node %d", msg.SenderID)
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
 // Ping the leader periodically to see if it is still alive
 func (n *Node) monitorLeader() {
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(12 * time.Second)
 	for range ticker.C {
 		n.mu.Lock()
 		leader := n.LeaderID
@@ -124,7 +124,7 @@ func (n *Node) monitorLeader() {
 			continue // I am leader or election in progress
 		}
 
-		log.Printf("Sending 3-second heartbeat ping to Leader %d...", leader)
+		log.Printf("Sending 12-second heartbeat ping to Leader %d...", leader)
 		msg := ElectionMsg{SenderID: n.ID}
 		_, err := n.sendRPC(leader, "/ping", msg)
 		if err != nil {
